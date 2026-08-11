@@ -19,7 +19,7 @@ class TBBCoreTask : public CoreTask<Separator, Types...> {
     TBBCoreTask(TBBTask<Separator, Types...> *const task,
             std::string const &name, size_t numberThreads, size_t numberSubThreads, bool const automaticStart) :
         CoreTask<Separator, Types...>(task, name, numberThreads, automaticStart),
-        arena(numberThreads) {}
+        arena(numberSubThreads) {}
 
     void run() override {
         std::chrono::time_point<std::chrono::system_clock>
