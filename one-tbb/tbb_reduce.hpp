@@ -7,14 +7,14 @@
 template <typename T>
 T tbb_reduce(std::span<T> const &v) {
     T sum = oneapi::tbb::parallel_reduce(
-        oneapi::tbb::blocked_range<int>(0, v.size()), 0,
-        [&](oneapi::tbb::blocked_range<int> const& r, T init) -> T {
-            for (int i = r.begin(); i != r.end(); i++) {
+        oneapi::tbb::blocked_range<std::size_t>(0, v.size()), T{0},
+        [&](oneapi::tbb::blocked_range<std::size_t> const& r, T init) -> T {
+            for (std::size_t i = r.begin(); i != r.end(); i++) {
                 init += v[i];
             }
             return init;
         },
-        [](T lhs, int rhs) -> T {
+        [](T lhs, T rhs) -> T {
             return lhs + rhs;
         }
     );
