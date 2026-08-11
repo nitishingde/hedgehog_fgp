@@ -1,8 +1,9 @@
-#ifndef TBB_REDUCE
-#define TBB_REDUCE
+#ifndef TBB_FUNCTIONS
+#define TBB_FUNCTIONS
 #include <vector>
 #include <span>
 #include <oneapi/tbb.h>
+#include <oneapi/tbb/parallel_for.h>
 
 template <typename T>
 T tbb_reduce(std::span<T> const &v) {
@@ -19,6 +20,13 @@ T tbb_reduce(std::span<T> const &v) {
         }
     );
     return sum;
+}
+
+template <typename T>
+void tbb_saxpy(std::span<T> z, T a, std::span<T> x, std::span<T> y) {
+    oneapi::tbb::parallel_for(0UL, z.size(), 1UL, [&](size_t i) {
+        z[i] = a * x[i] + y[i];
+    });
 }
 
 #endif

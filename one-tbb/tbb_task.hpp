@@ -63,10 +63,14 @@ class TBBCoreTask : public CoreTask<Separator, Types...> {
 
 template <size_t Separator, typename ...Types>
 class TBBTask : public AbstractTask<Separator, Types...> {
+    size_t numberSubThreads_;
   public:
     TBBTask(std::string const &name, size_t numberThreads, size_t numberSubThreads, bool automaticStart = false)
         : AbstractTask<Separator, Types...>(std::make_shared<core::TBBCoreTask<Separator, Types...>>(
-                    this, name, numberThreads, numberSubThreads, automaticStart)) {}
+                    this, name, numberThreads, numberSubThreads, automaticStart)),
+          numberSubThreads_(numberSubThreads) {}
+
+    size_t numberSubThreads() const { return this->numberSubThreads_; }
 };
 
 }
