@@ -210,7 +210,8 @@ static void testParallelFor(const auto N, const int32_t computeThreads, const in
                 }
             },
             [start, end, ITERS](const std::shared_ptr<std::vector<double>> &times) {
-                std::print("[{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms][Graph/{} {:8.3f}ms]\n",
+                std::print("[{:16}][{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms][Graph/{} {:8.3f}ms]\n",
+                    "Hedgehog",
                     "SAXPY",
                     *std::ranges::min_element(*times),
                     std::accumulate(times->begin(), times->end(), 0.0)/static_cast<double>(times->size()),
@@ -252,7 +253,8 @@ static void testParallelReduce(const int32_t N, const int32_t computeThreads, co
                 }
             },
             [start, end, ITERS](const std::shared_ptr<std::vector<double>> &times) {
-                std::print("[{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms][Graph/{} {:8.3f}ms]\n",
+                std::print("[{:16}][{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms][Graph/{} {:8.3f}ms]\n",
+                    "Hedgehog",
                     "REDUCE",
                     *std::ranges::min_element(*times),
                     std::accumulate(times->begin(), times->end(), 0.0)/static_cast<double>(times->size()),
