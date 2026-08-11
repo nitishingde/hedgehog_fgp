@@ -50,7 +50,7 @@ void benchmark_hh_reduced(size_t n, size_t iter) {
     for (size_t i = 0; i < n; ++i) {
         (*v)[i] = 1.0 / (double)(i + 1);
     }
-    timer_start(tbb_reduce);
+    timer_start(hh_reduce);
     ReduceGraph<double> graph(10, 2);
     graph.executeGraph();
     for (size_t i = 0; i < iter; ++i) {
@@ -58,8 +58,8 @@ void benchmark_hh_reduced(size_t n, size_t iter) {
     }
     graph.finishPushingData();
     graph.waitForTermination();
-    timer_end(tbb_reduce);
-    timer_report(tbb_reduce);
+    timer_end(hh_reduce);
+    timer_report(hh_reduce);
 }
 
 int main(){
