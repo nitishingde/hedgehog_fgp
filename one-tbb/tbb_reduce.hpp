@@ -1,18 +1,20 @@
 #ifndef TBB_REDUCE
 #define TBB_REDUCE
 #include <vector>
+#include <span>
 #include <oneapi/tbb.h>
 
-inline int tbb_reduce(std::vector<int> const &v) {
-    int sum = oneapi::tbb::parallel_reduce(
+template <typename T>
+T tbb_reduce(std::span<T> const &v) {
+    T sum = oneapi::tbb::parallel_reduce(
         oneapi::tbb::blocked_range<int>(0, v.size()), 0,
-        [&](oneapi::tbb::blocked_range<int> const& r, int init) -> int {
+        [&](oneapi::tbb::blocked_range<int> const& r, T init) -> T {
             for (int i = r.begin(); i != r.end(); i++) {
                 init += v[i];
             }
             return init;
         },
-        [](int lhs, int rhs) -> int {
+        [](T lhs, int rhs) -> T {
             return lhs + rhs;
         }
     );
