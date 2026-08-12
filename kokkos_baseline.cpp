@@ -40,8 +40,7 @@ static void testParallelFor(const ExecutionSpace &executionSpace, const int32_t 
         "SAXPY",
         *std::ranges::min_element(times),
         std::accumulate(times.begin(), times.end(), 0.0)/static_cast<double>(times.size()),
-        *std::ranges::max_element(times),
-        ITERS
+        *std::ranges::max_element(times)
     );
 }
 
@@ -74,8 +73,7 @@ static void testParallelReduce(const ExecutionSpace &executionSpace, const int32
         "REDUCE",
         *std::ranges::min_element(times),
         std::accumulate(times.begin(), times.end(), 0.0)/static_cast<double>(times.size()),
-        *std::ranges::max_element(times),
-        ITERS
+        *std::ranges::max_element(times)
     );
 }
 
