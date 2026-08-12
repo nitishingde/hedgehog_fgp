@@ -23,12 +23,12 @@ namespace {
         explicit ParallelForCT(const int32_t computeThreads):
             AbstractTask("", computeThreads, false) {}
 
-        void execute(std::shared_ptr<SaxpyWorkUnit> data) override {
-            auto [x, y, z, a] = *data;
+        void execute(std::shared_ptr<SaxpyWorkUnit> workUnit) override {
+            auto [x, y, z, a] = *workUnit;
             for(int32_t i = 0; i < z.size(); ++i) {
                 z[i] = a*x[i] + y[i];
             }
-            this->addResult(data);
+            this->addResult(workUnit);
         }
 
         std::shared_ptr<AbstractTask> copy() override {
