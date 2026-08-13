@@ -46,15 +46,15 @@ public:
     }
 };
 
-using Latch = std::latch;
+// using Latch = std::latch;
 // using Latch = LatchCV;
-// using Latch = LatchAtomics;
+using Latch = LatchAtomics;
 
-template<typename Data, typename Range, typename Latch = Latch>
-struct WorkUnit {
-    std::shared_ptr<Data>  data;
-    Range                  range;
-    std::shared_ptr<Latch> latch;
+struct LatchDeleter {
+    void operator()(const Latch *pLatch) const {
+        pLatch->wait();
+        delete pLatch;
+    }
 };
 
 struct SaxpyData {
@@ -64,37 +64,162 @@ struct SaxpyData {
     float              a;
 };
 
-using SaxpyWorkUnit = WorkUnit<SaxpyData, std::tuple<int32_t, int32_t>>;
+namespace hh {
+    template<std::integral Int>
+    struct RangePolicy1D {
+        using index_type = Int;
+        static constexpr size_t rank = 1;
 
-class SaxpyTask: public hh::AbstractTask<2, SaxpyData, SaxpyWorkUnit, SaxpyData> {
+        Int begin = {0};
+        Int end   = {0};
+        Int step  = {1};
+    };
+
+    template<size_t Rank, std::integral Int>
+    struct MDRangePolicy {
+        using index_type = Int;
+        static constexpr size_t rank = Rank;
+
+        std::array<Int, Rank> begin = {};
+        std::array<Int, Rank> end   = {};
+        std::array<Int, Rank> tile  = {};
+    };
+
+    template<std::integral Int = int32_t>
+    using RangePolicy2D = MDRangePolicy<2, Int>;
+
+    template<std::integral Int = int32_t>
+    using RangePolicy3D = MDRangePolicy<3, Int>;
+
+    namespace tool {
+        template<typename T>
+        concept IsRangePolicy1D = requires(T r) {
+            typename T::index_type;
+            requires std::integral<typename T::index_type>;
+            requires T::rank == 1;
+            { r.begin } -> std::same_as<typename T::index_type&>;
+            { r.end   } -> std::same_as<typename T::index_type&>;
+        };
+
+        template <typename T>
+        concept IsMDRangePolicy = requires(T r) {
+            typename T::index_type;
+            requires std::integral<typename T::index_type>;
+            requires (T::rank > 1);
+            { r.begin } -> std::same_as<std::array<typename T::index_type, T::rank>&>;
+            { r.end   } -> std::same_as<std::array<typename T::index_type, T::rank>&>;
+        };
+
+        template<typename T>
+        concept IsRangePolicy2D = IsMDRangePolicy<T> and T::rank == 2;
+
+        template<typename T>
+        concept IsRangePolicy3D = IsMDRangePolicy<T> and T::rank == 3;
+    }
+
+    template<typename Data, typename Range, typename Latch = Latch>
+    struct WorkUnit {
+        using InputType   = Data;
+        using DataType    = Data;
+        using RangePolicy = Range;
+
+        std::shared_ptr<Data> data;
+        Range                 range;
+        Latch&                latch;
+
+        ~WorkUnit() {
+            latch.count_down();
+        }
+
+        [[nodiscard]] auto operator*() {
+            return std::make_tuple(data, range);
+        }
+    };
+
+    template<typename Input, typename Range>
+    struct ParallelForInput {
+        using InputType   = Input;
+        using RangePolicy = Range;
+        using WorkUnit    = WorkUnit<Input, Range>;
+    };
+
+    namespace tool {
+        template <typename T>
+        concept IsWorkUnit = requires(T w) {
+            w.data;
+            w.range;
+            w.latch;
+
+            requires IsRangePolicy1D<std::remove_cvref_t<decltype(w.range)>> or IsMDRangePolicy<std::remove_cvref_t<decltype(w.range)>>;
+
+            { w.latch.count_down() };
+            { *w                   } -> std::convertible_to<std::tuple<decltype(w.data), decltype(w.range)>>;
+        };
+
+        template <typename T>
+        concept IsParallelForInput = requires(T p) {
+            typename T::InputType;
+            typename T::RangePolicy;
+            typename T::WorkUnit;
+
+            requires IsRangePolicy1D<typename T::RangePolicy> or IsMDRangePolicy<typename T::RangePolicy>;
+            requires std::is_same_v<typename T::WorkUnit, WorkUnit<typename T::InputType, typename T::RangePolicy>>;
+        };
+    }
+
+    template<tool::IsParallelForInput Input, class ...Outputs>
+    class AbstractParallelForTask: public AbstractTask<2, typename Input::InputType, typename Input::WorkUnit, Outputs...> {
+    public:
+        using base        = AbstractTask<2, typename Input::InputType, typename Input::WorkUnit, Outputs...>;
+        using WorkUnit    = Input::WorkUnit;
+        using RangePolicy = Input::RangePolicy;
+        using InputType   = Input::InputType;
+
+        explicit AbstractParallelForTask(const std::string &name = "ParallelForTask", const size_t numberThreads = 1):
+            base(name, numberThreads, false) {}
+
+        template<std::integral Int>
+        requires tool::IsRangePolicy1D<RangePolicy>
+        [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
+            const auto N              = end-start;
+            const auto computeThreads = static_cast<Int>(this->numberThreads());
+            const auto range          = std::max(MIN_RANGE, (N+computeThreads-1)/computeThreads);
+            auto       latch          = std::unique_ptr<Latch, LatchDeleter>(new Latch((N+range-1)/range));
+            auto       self           = static_cast<core::abstraction::ReceiverAbstraction<WorkUnit>*>(this->coreTask().get());
+            for(Int i = range; i < N; i += range) {
+                self->receive(std::make_shared<WorkUnit>(data, RangePolicy(i, std::min(i+range, N)), *latch));
+                this->coreTask()->wakeUp();
+            }
+            this->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, range), *latch));
+            return latch;
+        }
+
+        template<std::integral Int>
+        requires tool::IsRangePolicy1D<RangePolicy>
+        [[nodiscard]] auto executeWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
+            (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
+        }
+
+        void execute(std::shared_ptr<WorkUnit>) override {}
+    };
+}
+
+class SaxpyTask final: public hh::AbstractParallelForTask<hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>, SaxpyData> {
 public:
     explicit SaxpyTask(const int32_t computeThreads):
-        AbstractTask("SaxpyTask", computeThreads, false) {}
+        AbstractParallelForTask("SaxpyTask", computeThreads) {}
 
-    void execute(std::shared_ptr<SaxpyData> data) override {
-        auto       &[x, y, z, a]  = *data;
-        const auto N              = static_cast<int32_t>(z.size());
-        const auto computeThreads = static_cast<int32_t>(this->numberThreads());
-        const auto range          = std::max(1000'000, (N+computeThreads-1)/computeThreads);
-        auto       latch          = std::make_shared<Latch>((N+range-1)/range);
-        const auto self           = static_cast<hh::core::abstraction::ReceiverAbstraction<SaxpyWorkUnit>*>(this->coreTask().get());
-        for(int32_t i = range; i < N; i += range) {
-            self->receive(std::make_shared<SaxpyWorkUnit>(data, std::make_tuple(i, std::min(i+range, N)), latch));
-            this->coreTask()->wakeUp();
-        }
-        execute(std::make_shared<SaxpyWorkUnit>(data, std::make_tuple(0, range), latch));
-        latch->wait();
+    void execute(const std::shared_ptr<SaxpyData> data) override {
+        this->executeWorkUnits(data, 0, static_cast<int32_t>(data->z.size()));
         this->addResult(data);
     }
 
-    void execute(std::shared_ptr<SaxpyWorkUnit> workUnit) override {
-        auto [data, range, latch] = *workUnit;
-        auto &[x, y, z, a] = *data;
-        auto [start, end] = range;
-        for(int32_t i = start; i < end; ++i) {
+    void execute(const std::shared_ptr<WorkUnit> workUnit) override {
+        const auto [data, range] = **workUnit;
+        auto       &[x, y, z, a] = *data;
+        for(int32_t i = range.begin; i < range.end; i += range.step) {
             z[i] = a*x[i] + y[i];
         }
-        latch->count_down();
     }
 
     std::shared_ptr<AbstractTask> copy() override {
