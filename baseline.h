@@ -190,7 +190,7 @@ namespace hh {
                 self->receive(std::make_shared<WorkUnit>(data, RangePolicy(i, std::min(i+range, N)), *latch));
                 this->coreTask()->wakeUp();
             }
-            this->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, range), *latch));
+            static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, range), *latch));
             return latch;
         }
 
@@ -199,8 +199,6 @@ namespace hh {
         [[nodiscard]] auto executeWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
         }
-
-        void execute(std::shared_ptr<WorkUnit>) override {}
     };
 }
 
