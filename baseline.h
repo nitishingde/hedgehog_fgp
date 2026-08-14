@@ -345,7 +345,7 @@ public:
         auto       latch          = std::make_shared<Latch>(chunks);
         auto       results        = std::vector(chunks, std::numeric_limits<ReductionResult>::min());
         const auto self           = static_cast<hh::core::abstraction::ReceiverAbstraction<MaxReductionWorkUnit>*>(this->coreTask().get());
-        for(int32_t i = range, c = 0; i < N; i += range, ++c) {
+        for(int32_t i = range, c = 1; i < N; i += range, ++c) {
             self->receive(std::make_shared<MaxReductionWorkUnit>(
                 data,
                 std::make_tuple(i, std::min(i+range, N)),
