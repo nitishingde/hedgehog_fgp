@@ -65,31 +65,37 @@ struct SaxpyData {
 };
 
 namespace hh {
-    template<std::integral Int>
-    struct RangePolicy1D {
+    template<std::size_t Rank, std::integral Int = int>
+    struct RangePolicy {
         using index_type = Int;
-        static constexpr size_t rank = 1;
-
-        Int begin = {0};
-        Int end   = {0};
-        Int step  = {1};
-    };
-
-    template<size_t Rank, std::integral Int>
-    struct MDRangePolicy {
-        using index_type = Int;
-        static constexpr size_t rank = Rank;
+        static constexpr std::size_t rank = Rank;
 
         std::array<Int, Rank> begin = {};
         std::array<Int, Rank> end   = {};
-        std::array<Int, Rank> tile  = {};
+        std::array<Int, Rank> step  = {}; // or 'tile'
     };
 
-    template<std::integral Int = int32_t>
-    using RangePolicy2D = MDRangePolicy<2, Int>;
+    template<std::integral Int>
+    struct RangePolicy<1, Int> {
+        using index_type = Int;
+        static constexpr std::size_t rank = 1;
+
+        Int begin = 0;
+        Int end   = 0;
+        Int step  = 1;
+    };
+
+    template<std::integral Int = int>
+    using RangePolicy1D = RangePolicy<1, Int>;
 
     template<std::integral Int = int32_t>
-    using RangePolicy3D = MDRangePolicy<3, Int>;
+    using RangePolicy2D = RangePolicy<2, Int>;
+
+    template<std::integral Int = int32_t>
+    using RangePolicy3D = RangePolicy<3, Int>;
+
+    template<std::size_t Rank, std::integral Int = int>
+    using MDRangePolicy = RangePolicy<Rank, Int>;
 
     namespace tool {
         template<typename T>
@@ -111,13 +117,16 @@ namespace hh {
         };
 
         template<typename T>
+        concept IsRangePolicy = IsRangePolicy1D<T> || IsMDRangePolicy<T>;
+
+        template<typename T>
         concept IsRangePolicy2D = IsMDRangePolicy<T> and T::rank == 2;
 
         template<typename T>
         concept IsRangePolicy3D = IsMDRangePolicy<T> and T::rank == 3;
     }
 
-    template<typename Data, typename Range, typename Latch = Latch>
+    template<typename Data, tool::IsRangePolicy Range, typename Latch = Latch>
     struct WorkUnit {
         using InputType   = Data;
         using DataType    = Data;
@@ -136,7 +145,7 @@ namespace hh {
         }
     };
 
-    template<typename Input, typename Range>
+    template<typename Input, tool::IsRangePolicy Range>
     struct ParallelForInput {
         using InputType   = Input;
         using RangePolicy = Range;
