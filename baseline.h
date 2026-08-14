@@ -177,7 +177,6 @@ namespace hh {
         using WorkUnit    = WorkUnit<Input, Range>;
     };
 
-
     namespace tool {
         template<typename T>
         struct ExpandInput {
