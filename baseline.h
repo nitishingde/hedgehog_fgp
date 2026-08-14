@@ -206,6 +206,13 @@ namespace hh {
             using Type = AbstractTask<Separator, ExpandedInputs..., Outputs...>;
         };
 
+        template<size_t Separator, class ...AllTypes>
+        using InstantiateTaskBase_t = InstantiateTaskBase<
+            std::tuple_size_v<typename ExpandAllInputs<Inputs<Separator, AllTypes...>>::Type>,
+            typename ExpandAllInputs<Inputs<Separator, AllTypes...>>::Type,
+            Outputs<Separator, AllTypes...>
+        >::Type;
+
         template<typename Target, typename Tuple, size_t CurrentIndex = 0>
         struct IndexOfType;
 
@@ -228,14 +235,13 @@ namespace hh {
     }
 
     template<size_t Separator, class ...AllTypes>
-    class AbstractParallelForTask:
-        public tool::InstantiateTaskBase<std::tuple_size_v<typename tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type>, typename tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type, tool::Outputs<Separator, AllTypes...>>::Type {
+    class AbstractParallelForTask: public tool::InstantiateTaskBase_t<Separator, AllTypes...> {
     public:
         using ExpandedInputs = tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type;
         using Outputs        = tool::Outputs<Separator, AllTypes...>;
 
         static constexpr auto TotalExpandedInputs = std::tuple_size_v<ExpandedInputs>;
-        using Base           = tool::InstantiateTaskBase<TotalExpandedInputs, ExpandedInputs, tool::Outputs<Separator, AllTypes...>>::Type;
+        using Base           = tool::InstantiateTaskBase_t<Separator, AllTypes...>;
 
         explicit AbstractParallelForTask(const std::string &name = "ParallelForTask", const size_t numberThreads = 1):
             Base(name, numberThreads, false) {}
