@@ -167,20 +167,70 @@ namespace hh {
         };
     }
 
-    template<tool::IsParallelForInput Input, class ...Outputs>
-    class AbstractParallelForTask: public AbstractTask<2, typename Input::InputType, typename Input::WorkUnit, Outputs...> {
+    namespace tool {
+        template<typename Input>
+        struct ExpandInputPair {
+            using Type = std::tuple<typename Input::InputType, typename Input::WorkUnit>;
+        };
+
+        template<typename InputsTuple>
+        struct ExpandAllInputs;
+
+        template<typename ...Inputs>
+        struct ExpandAllInputs<std::tuple<Inputs...>> {
+            using Type = decltype(std::tuple_cat(
+                std::declval<typename ExpandInputPair<Inputs>::Type>()...
+            ));
+        };
+
+        template<size_t Separator, typename ExpandedInputsTuple, typename OutputsTuple>
+        struct InstantiateTaskBase;
+
+        template<size_t Separator, typename ...ExpandedInputs, typename ...Outputs>
+        struct InstantiateTaskBase<Separator, std::tuple<ExpandedInputs...>, std::tuple<Outputs...>> {
+            using Type = AbstractTask<2 * Separator, ExpandedInputs..., Outputs...>;
+        };
+
+        template<typename Target, typename Tuple, size_t CurrentIndex = 0>
+        struct IndexOfType;
+
+        template<typename Target, size_t CurrentIndex>
+        struct IndexOfType<Target, std::tuple<>, CurrentIndex> {
+            static_assert(CurrentIndex < 0, "Type not found in Tuple!");
+        };
+
+        template<typename Target, typename ...Rest, size_t CurrentIndex>
+        struct IndexOfType<Target, std::tuple<Target, Rest...>, CurrentIndex> {
+            static constexpr size_t Value = CurrentIndex;
+        };
+
+        template<typename Target, typename Head, typename ...Rest, size_t CurrentIndex>
+        struct IndexOfType<Target, std::tuple<Head, Rest...>, CurrentIndex>
+            : IndexOfType<Target, std::tuple<Rest...>, CurrentIndex + 1> {};
+
+        template<typename Target, typename Tuple>
+        constexpr size_t IndexOfType_v = IndexOfType<Target, Tuple>::Value;
+    }
+
+    template<size_t Separator, class ...AllTypes>
+    class AbstractParallelForTask:
+        public tool::InstantiateTaskBase<Separator, typename tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type, tool::Outputs<Separator, AllTypes...>>::Type {
     public:
-        using base        = AbstractTask<2, typename Input::InputType, typename Input::WorkUnit, Outputs...>;
-        using WorkUnit    = Input::WorkUnit;
-        using RangePolicy = Input::RangePolicy;
-        using InputType   = Input::InputType;
+        using ExpandedInputs = tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type;
+        using Outputs        = tool::Outputs<Separator, AllTypes...>;
+        using Base           = tool::InstantiateTaskBase<Separator, ExpandedInputs, Outputs>::Type;
 
         explicit AbstractParallelForTask(const std::string &name = "ParallelForTask", const size_t numberThreads = 1):
-            base(name, numberThreads, false) {}
+            Base(name, numberThreads, false) {}
 
-        template<std::integral Int>
-        requires tool::IsRangePolicy1D<RangePolicy>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int>
         [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
+            constexpr auto INP_POS = tool::IndexOfType_v<InputType, ExpandedInputs>;
+            static_assert(INP_POS % 2 == 0, "Resolved position is not an InputType!");
+            using WorkUnit    = std::tuple_element_t<INP_POS + 1, ExpandedInputs>;
+            using RangePolicy = WorkUnit::RangePolicy;
+            static_assert(tool::IsRangePolicy1D<RangePolicy>, "RangePolicy for this WorkUnit is not 1D!");
+
             const auto N              = end-start;
             const auto computeThreads = static_cast<Int>(this->numberThreads());
             const auto range          = std::max(MIN_RANGE, (N+computeThreads-1)/computeThreads);
@@ -194,29 +244,46 @@ namespace hh {
             return latch;
         }
 
-        template<std::integral Int>
-        requires tool::IsRangePolicy1D<RangePolicy>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int>
         [[nodiscard]] auto executeWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
         }
     };
 }
 
-class SaxpyTask final: public hh::AbstractParallelForTask<hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>, SaxpyData> {
+struct MultiplierData {
+    std::vector<float> data;
+    float              factor;
+};
+
+class SaxpyTask final: public hh::AbstractParallelForTask<2, hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>, hh::ParallelForInput<MultiplierData, hh::RangePolicy1D<int32_t>>, SaxpyData, MultiplierData> {
 public:
     explicit SaxpyTask(const int32_t computeThreads):
         AbstractParallelForTask("SaxpyTask", computeThreads) {}
 
     void execute(const std::shared_ptr<SaxpyData> data) override {
-        this->executeWorkUnits(data, 0, static_cast<int32_t>(data->z.size()));
+        this->executeWorkUnits(data, int32_t{0}, static_cast<int32_t>(data->z.size()));
         this->addResult(data);
     }
 
-    void execute(const std::shared_ptr<WorkUnit> workUnit) override {
+    void execute(const std::shared_ptr<hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>::WorkUnit> workUnit) override {
         const auto [data, range] = **workUnit;
         auto       &[x, y, z, a] = *data;
         for(int32_t i = range.begin; i < range.end; i += range.step) {
             z[i] = a*x[i] + y[i];
+        }
+    }
+
+    void execute(const std::shared_ptr<MultiplierData> data) override {
+        this->executeWorkUnits(data, int32_t{0}, static_cast<int32_t>(data->data.size()));
+        this->addResult(data);
+    }
+
+    void execute(const std::shared_ptr<hh::ParallelForInput<MultiplierData, hh::RangePolicy1D<int32_t>>::WorkUnit> workUnit) override {
+        const auto [data, range] = **workUnit;
+        auto       &[arr, fact]  = *data;
+        for(int32_t i = range.begin; i < range.end; i += range.step) {
+            arr[i] *= fact;
         }
     }
 
