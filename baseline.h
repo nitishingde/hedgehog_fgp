@@ -126,7 +126,7 @@ namespace hh {
         concept IsRangePolicy3D = IsMDRangePolicy<T> and T::rank == 3;
     }
 
-    template<typename Data, tool::IsRangePolicy Range, typename Latch = Latch>
+    template<typename Data, tool::IsRangePolicy Range>
     struct WorkUnit {
         using InputType   = Data;
         using DataType    = Data;
@@ -145,7 +145,7 @@ namespace hh {
         }
     };
 
-    template<typename Input, tool::IsRangePolicy Range>
+    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
     struct ParallelForInput {
         using InputType   = Input;
         using RangePolicy = Range;
@@ -280,7 +280,7 @@ struct MultiplierData {
     float              factor;
 };
 
-class SaxpyTask final: public hh::AbstractParallelForTask<4, int32_t, hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>, double, hh::ParallelForInput<MultiplierData, hh::RangePolicy1D<int32_t>>, SaxpyData, MultiplierData> {
+class SaxpyTask final: public hh::AbstractParallelForTask<4, int32_t, hh::ParallelForInput<SaxpyData>, double, hh::ParallelForInput<MultiplierData>, SaxpyData, MultiplierData> {
 public:
     explicit SaxpyTask(const int32_t computeThreads):
         AbstractParallelForTask("SaxpyTask", computeThreads) {}
@@ -294,7 +294,7 @@ public:
         this->addResult(data);
     }
 
-    void execute(const std::shared_ptr<hh::ParallelForInput<SaxpyData, hh::RangePolicy1D<int32_t>>::WorkUnit> workUnit) override {
+    void execute(const std::shared_ptr<hh::ParallelForInput<SaxpyData>::WorkUnit> workUnit) override {
         const auto [data, range] = **workUnit;
         auto       &[x, y, z, a] = *data;
         for(int32_t i = range.begin; i < range.end; i += range.step) {
@@ -307,7 +307,7 @@ public:
         this->addResult(data);
     }
 
-    void execute(const std::shared_ptr<hh::ParallelForInput<MultiplierData, hh::RangePolicy1D<int32_t>>::WorkUnit> workUnit) override {
+    void execute(const std::shared_ptr<hh::ParallelForInput<MultiplierData>::WorkUnit> workUnit) override {
         const auto [data, range] = **workUnit;
         auto       &[arr, fact]  = *data;
         for(int32_t i = range.begin; i < range.end; i += range.step) {
@@ -322,7 +322,7 @@ public:
 
 using ReductionResult   = float;
 using ReductionData     = std::vector<ReductionResult>;
-template<typename Container, typename Range, typename Result, typename Latch = Latch>
+template<typename Container, typename Range, typename Result>
 struct ReductionWorkUnit {
     std::shared_ptr<Container> data;
     Range                      range;
