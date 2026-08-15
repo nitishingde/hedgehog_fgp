@@ -145,6 +145,13 @@ namespace hh {
         }
     };
 
+    template<typename Input, tool::IsRangePolicy Range>
+    struct ParallelForInput {
+        using InputType   = Input;
+        using RangePolicy = Range;
+        using WorkUnit    = WorkUnit<Input, Range>;
+    };
+
     namespace tool {
         template <typename T>
         concept IsWorkUnit = requires(T w) {
@@ -168,14 +175,6 @@ namespace hh {
             requires std::is_same_v<typename T::WorkUnit, WorkUnit<typename T::InputType, typename T::RangePolicy>>;
         };
     }
-
-    template<typename Input, tool::IsRangePolicy Range>
-    requires (not tool::IsWorkUnit<Input>)
-    struct ParallelForInput {
-        using InputType   = Input;
-        using RangePolicy = Range;
-        using WorkUnit    = WorkUnit<Input, Range>;
-    };
 
     namespace tool {
         template<typename T>
