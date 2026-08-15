@@ -107,7 +107,7 @@ namespace hh {
             { r.end   } -> std::same_as<typename T::index_type&>;
         };
 
-        template <typename T>
+        template<typename T>
         concept IsMDRangePolicy = requires(T r) {
             typename T::index_type;
             requires std::integral<typename T::index_type>;
@@ -153,7 +153,7 @@ namespace hh {
     };
 
     namespace tool {
-        template <typename T>
+        template<typename T>
         concept IsWorkUnit = requires(T w) {
             w.data;
             w.range;
@@ -165,7 +165,7 @@ namespace hh {
             { *w                   } -> std::convertible_to<std::tuple<decltype(w.data), decltype(w.range)>>;
         };
 
-        template <typename T>
+        template<typename T>
         concept IsParallelForInput = requires(T p) {
             typename T::InputType;
             typename T::RangePolicy;
