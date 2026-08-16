@@ -57,13 +57,6 @@ struct LatchDeleter {
     }
 };
 
-struct SaxpyData {
-    std::vector<float> x;
-    std::vector<float> y;
-    std::vector<float> z;
-    float              a;
-};
-
 namespace hh {
     template<std::size_t Rank, std::integral Int = int>
     struct RangePolicy {
@@ -337,6 +330,13 @@ namespace hh {
         }
     };
 }
+
+struct SaxpyData {
+    std::vector<float> x;
+    std::vector<float> y;
+    std::vector<float> z;
+    float              a;
+};
 
 using ReductionResult   = float;
 using ReductionData     = std::vector<ReductionResult>;
