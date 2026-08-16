@@ -147,20 +147,7 @@ namespace hh {
         using StorageType = ScanState;
     };
 
-    namespace tool {
-        template<typename StateTag>
-        struct StateStorage {
-            using Type = StateTag;
-        };
-
-        template<>
-        struct StateStorage<ForTag> {
-            struct Empty {};
-            using Type = Empty;
-        };
-    }
-
-    template<typename Data, tool::IsRangePolicy Range = RangePolicy1D<int32_t>, typename StateTag = ForTag>
+    template<typename Data, typename StateTag = ForTag, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
     struct WorkUnit {
         using RangePolicy  = Range;
         using StorageType  = StateTag::StorageType;
@@ -223,7 +210,7 @@ namespace hh {
 
         template<typename Data, typename Range, typename ...Tags>
         struct ExpandDescriptor<ParallelInput<Data, Range, Tags...>> {
-            using Type = std::tuple<Data, WorkUnit<Data, Range, Tags>...>;
+            using Type = std::tuple<Data, WorkUnit<Data, Tags, Range>...>;
         };
 
         template<typename T>
@@ -298,7 +285,7 @@ namespace hh {
         template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int32_t>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
-            using WorkUnit    = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, RangePolicy1D<Int>, ForTag>, ExpandedInputs>, ExpandedInputs>;
+            using WorkUnit    = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ForTag, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
             using RangePolicy = WorkUnit::RangePolicy;
 
             const auto N              = end-start;
@@ -322,7 +309,7 @@ namespace hh {
         template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp = std::plus<>>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] ValueType executeReduce(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
-            using WorkUnit     = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, RangePolicy1D<Int>, ReduceTag<ValueType>>, ExpandedInputs>, ExpandedInputs>;
+            using WorkUnit     = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ReduceTag<ValueType>, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
             using RangePolicy  = WorkUnit::RangePolicy;
 
             const auto N              = end-start;
@@ -387,7 +374,7 @@ public:
         this->addResult(std::make_shared<ReductionResult>(result));
     }
 
-    void execute(const std::shared_ptr<hh::WorkUnit<ReductionData, hh::RangePolicy1D<int32_t>, hh::ReduceTag<ReductionResult>>> workUnit) override {
+    void execute(const std::shared_ptr<hh::WorkUnit<ReductionData, hh::ReduceTag<ReductionResult>>> workUnit) override {
         auto [data, range] = **workUnit;
         auto value = std::numeric_limits<ReductionResult>::min();
         for(int32_t i = range.begin; i < range.end; i += range.step) {
