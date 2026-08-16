@@ -58,7 +58,7 @@ struct LatchDeleter {
 };
 
 namespace hh {
-    template<std::size_t Rank, std::integral Int = int>
+    template<std::size_t Rank, std::integral Int = int64_t>
     struct RangePolicy {
         using index_type = Int;
         static constexpr std::size_t rank = Rank;
@@ -78,16 +78,16 @@ namespace hh {
         Int step  = 1;
     };
 
-    template<std::integral Int = int>
+    template<std::integral Int = int64_t>
     using RangePolicy1D = RangePolicy<1, Int>;
 
-    template<std::integral Int = int32_t>
+    template<std::integral Int = int64_t>
     using RangePolicy2D = RangePolicy<2, Int>;
 
-    template<std::integral Int = int32_t>
+    template<std::integral Int = int64_t>
     using RangePolicy3D = RangePolicy<3, Int>;
 
-    template<std::size_t Rank, std::integral Int = int>
+    template<std::size_t Rank, std::integral Int = int64_t>
     using MDRangePolicy = RangePolicy<Rank, Int>;
 
     namespace tool {
@@ -140,7 +140,7 @@ namespace hh {
         using StorageType = ScanState;
     };
 
-    template<typename Data, typename StateTag = ForTag, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    template<typename Data, typename StateTag = ForTag, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
     struct WorkUnit {
         using RangePolicy  = Range;
         using StorageType  = StateTag::StorageType;
@@ -167,13 +167,13 @@ namespace hh {
         using TagsTuple   = std::conditional_t<sizeof...(ConstructTags) == 0, std::tuple<ForTag>, std::tuple<ConstructTags...>>;
     };
 
-    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
     using ParallelForInput = ParallelInput<Input, Range, ForTag>;
 
-    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
     using ParallelReduceInput = ParallelInput<Input, Range, ReduceTag<ValueType>>;
 
-    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
     using ParallelScanInput = ParallelInput<Input, Range, ScanTag<ValueType>>;
 
     namespace tool {
@@ -275,7 +275,7 @@ namespace hh {
         explicit AbstractParallelTask(const std::string &name = "ParallelTask", const size_t numberThreads = 1):
             Base(name, numberThreads, false) {}
 
-        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int32_t>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int64_t>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
             using WorkUnit    = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ForTag, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
@@ -294,12 +294,12 @@ namespace hh {
             return latch;
         }
 
-        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int32_t>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int64_t>
         [[nodiscard]] auto executeWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
         }
 
-        template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp = std::plus<>>
+        template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] ValueType executeReduce(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
             using WorkUnit     = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ReduceTag<ValueType>, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
@@ -351,14 +351,14 @@ public:
     void execute(const std::shared_ptr<double> data) override {}
 
     void execute(const std::shared_ptr<SaxpyData> data) override {
-        this->executeWorkUnits(data, int32_t{0}, static_cast<int32_t>(data->z.size()));
+        this->executeWorkUnits(data, int64_t{0}, static_cast<int64_t>(data->z.size()));
         this->addResult(data);
     }
 
     void execute(const std::shared_ptr<hh::WorkUnit<SaxpyData>> workUnit) override {
         const auto [data, range] = **workUnit;
         auto       &[x, y, z, a] = *data;
-        for(int32_t i = range.begin; i < range.end; i += range.step) {
+        for(auto i = range.begin; i < range.end; i += range.step) {
             z[i] = a*x[i] + y[i];
         }
     }
@@ -366,8 +366,8 @@ public:
     void execute(const std::shared_ptr<ReductionData> data) override {
         auto result = this->executeReduce(
             data,
-            int32_t{0},
-            static_cast<int32_t>(data->size()),
+            int64_t{0},
+            static_cast<int64_t>(data->size()),
             std::numeric_limits<ReductionResult>::min(),
             [](const ReductionResult a, const ReductionResult b) { return std::max(a, b); }
         );
@@ -377,7 +377,7 @@ public:
     void execute(const std::shared_ptr<hh::WorkUnit<ReductionData, hh::ReduceTag<ReductionResult>>> workUnit) override {
         auto [data, range] = **workUnit;
         auto value = std::numeric_limits<ReductionResult>::min();
-        for(int32_t i = range.begin; i < range.end; i += range.step) {
+        for(auto i = range.begin; i < range.end; i += range.step) {
             value = std::max(value, data->at(i));
         }
         workUnit->state = value;
