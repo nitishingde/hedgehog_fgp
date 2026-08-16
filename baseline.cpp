@@ -13,7 +13,7 @@ static void testParallelFor(const auto N, const int32_t computeThreads, const in
     );
 
     auto       graph = hh::Graph<1, SaxpyData, SaxpyData, std::vector<double>>();
-    const auto task  = std::make_shared<SaxpyTask>(computeThreads);
+    const auto task  = std::make_shared<ParallelTask>(computeThreads);
 
     graph.inputs(task);
     graph.outputs(task);
@@ -51,7 +51,7 @@ static void testParallelReduce(const int32_t N, const int32_t computeThreads, co
     std::ranges::iota(*data, 0);
 
     auto       graph = hh::Graph<1, ReductionData, ReductionResult, std::vector<double>>();
-    const auto task  = std::make_shared<ReductionTask>(computeThreads);
+    const auto task  = std::make_shared<ParallelTask>(computeThreads);
 
     graph.inputs(task);
     graph.outputs(task);

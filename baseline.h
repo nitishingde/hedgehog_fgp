@@ -126,15 +126,50 @@ namespace hh {
         concept IsRangePolicy3D = IsMDRangePolicy<T> and T::rank == 3;
     }
 
-    template<typename Data, tool::IsRangePolicy Range>
+    struct ForTag {
+        struct Empty {};
+        using StorageType = Empty;
+    };
+
+    template<typename ValueType>
+    struct ReduceTag {
+        using StorageType = ValueType&;
+    };
+
+    template<typename ValueType>
+    struct ScanTag {
+        struct ScanState {
+            using value_type = ValueType;
+            ValueType& chunkSum     = {};
+            ValueType& prefixOffset = {};
+            bool       finalPass    = {false};
+        };
+        using StorageType = ScanState;
+    };
+
+    namespace tool {
+        template<typename StateTag>
+        struct StateStorage {
+            using Type = StateTag;
+        };
+
+        template<>
+        struct StateStorage<ForTag> {
+            struct Empty {};
+            using Type = Empty;
+        };
+    }
+
+    template<typename Data, tool::IsRangePolicy Range = RangePolicy1D<int32_t>, typename StateTag = ForTag>
     struct WorkUnit {
-        using InputType   = Data;
-        using DataType    = Data;
-        using RangePolicy = Range;
+        using RangePolicy  = Range;
+        using StorageType  = StateTag::StorageType;
 
         std::shared_ptr<Data> data;
         Range                 range;
         Latch&                latch;
+        [[no_unique_address]]
+        StorageType           state;
 
         ~WorkUnit() {
             latch.count_down();
@@ -145,12 +180,21 @@ namespace hh {
         }
     };
 
-    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
-    struct ParallelForInput {
-        using InputType   = Input;
+    template<typename Data, tool::IsRangePolicy Range, typename ...ConstructTags>
+    struct ParallelInput {
+        using InputType   = Data;
         using RangePolicy = Range;
-        using WorkUnit    = WorkUnit<Input, Range>;
+        using TagsTuple   = std::conditional_t<sizeof...(ConstructTags) == 0, std::tuple<ForTag>, std::tuple<ConstructTags...>>;
     };
+
+    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    using ParallelForInput = ParallelInput<Input, Range, ForTag>;
+
+    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    using ParallelReduceInput = ParallelInput<Input, Range, ReduceTag<ValueType>>;
+
+    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int32_t>>
+    using ParallelScanInput = ParallelInput<Input, Range, ScanTag<ValueType>>;
 
     namespace tool {
         template<typename T>
@@ -166,25 +210,30 @@ namespace hh {
         };
 
         template<typename T>
-        concept IsParallelForInput = requires(T p) {
+        concept IsParallelInput = requires {
             typename T::InputType;
             typename T::RangePolicy;
-            typename T::WorkUnit;
-
-            requires IsRangePolicy1D<typename T::RangePolicy> or IsMDRangePolicy<typename T::RangePolicy>;
-            requires std::is_same_v<typename T::WorkUnit, WorkUnit<typename T::InputType, typename T::RangePolicy>>;
+            typename T::TagsTuple;
         };
     }
 
     namespace tool {
+        template<typename InputDescriptor>
+        struct ExpandDescriptor;
+
+        template<typename Data, typename Range, typename ...Tags>
+        struct ExpandDescriptor<ParallelInput<Data, Range, Tags...>> {
+            using Type = std::tuple<Data, WorkUnit<Data, Range, Tags>...>;
+        };
+
         template<typename T>
         struct ExpandInput {
             using Type = std::tuple<T>;
         };
 
-        template<IsParallelForInput T>
+        template<IsParallelInput T>
         struct ExpandInput<T> {
-            using Type = std::tuple<typename T::InputType, typename T::WorkUnit>;
+            using Type = ExpandDescriptor<T>::Type;
         };
 
         template<typename InputsTuple>
@@ -234,26 +283,23 @@ namespace hh {
     }
 
     template<size_t Separator, class ...AllTypes>
-    class AbstractParallelForTask: public tool::InstantiateTaskBase_t<Separator, AllTypes...> {
+    class AbstractParallelTask: public tool::InstantiateTaskBase_t<Separator, AllTypes...> {
     public:
+        using RawInputs      = tool::Inputs<Separator, AllTypes...>;
         using ExpandedInputs = tool::ExpandAllInputs<tool::Inputs<Separator, AllTypes...>>::Type;
         using Outputs        = tool::Outputs<Separator, AllTypes...>;
 
         static constexpr auto TotalExpandedInputs = std::tuple_size_v<ExpandedInputs>;
         using Base           = tool::InstantiateTaskBase_t<Separator, AllTypes...>;
 
-        explicit AbstractParallelForTask(const std::string &name = "ParallelForTask", const size_t numberThreads = 1):
+        explicit AbstractParallelTask(const std::string &name = "ParallelTask", const size_t numberThreads = 1):
             Base(name, numberThreads, false) {}
 
-        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int32_t>
+        requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
-            constexpr size_t INP_POS = hh::tool::IndexOfType_v<InputType, ExpandedInputs>;
-            static_assert(INP_POS + 1 < TotalExpandedInputs, "Selected input does not appear to be a ParallelForInput (no associated WorkUnit follows).");
-
-            using WorkUnit    = std::tuple_element_t<INP_POS + 1, ExpandedInputs>;
-            static_assert(tool::IsWorkUnit<WorkUnit>, "InputType does not have a valid WorkUnit (fix: use hh::ParallelForInput<InputType, RangePolicy>).");
+            using WorkUnit    = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, RangePolicy1D<Int>, ForTag>, ExpandedInputs>, ExpandedInputs>;
             using RangePolicy = WorkUnit::RangePolicy;
-            static_assert(tool::IsRangePolicy1D<RangePolicy>, "RangePolicy for this WorkUnit is not 1D!");
 
             const auto N              = end-start;
             const auto computeThreads = static_cast<Int>(this->numberThreads());
@@ -268,22 +314,50 @@ namespace hh {
             return latch;
         }
 
-        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int32_t>
         [[nodiscard]] auto executeWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
+        }
+
+        template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp = std::plus<>>
+        requires (not tool::IsWorkUnit<InputType>)
+        [[nodiscard]] ValueType executeReduce(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
+            using WorkUnit     = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, RangePolicy1D<Int>, ReduceTag<ValueType>>, ExpandedInputs>, ExpandedInputs>;
+            using RangePolicy  = WorkUnit::RangePolicy;
+
+            const auto N              = end-start;
+            const auto computeThreads = static_cast<Int>(this->numberThreads());
+            const auto range          = std::max(MIN_RANGE, (N+computeThreads-1)/computeThreads);
+            const auto chunks         = (N+range-1)/range;
+            auto       partialResults = std::vector(chunks, identityValue);
+            auto       latch          = std::unique_ptr<Latch, LatchDeleter>(new Latch(chunks));
+            auto       self           = static_cast<core::abstraction::ReceiverAbstraction<WorkUnit>*>(this->coreTask().get());
+
+            for(Int i = range, c = 1; i < N; i += range, ++c) {
+                self->receive(std::make_shared<WorkUnit>(data, RangePolicy(i, std::min(i + range, N)), *latch, partialResults[c]));
+                this->coreTask()->wakeUp();
+            }
+
+            static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, std::min(range, N)), *latch, partialResults[0]));
+            latch->wait();
+
+            auto finalResult = identityValue;
+            for(const auto &partialResult: partialResults) {
+                finalResult = reductionOp(finalResult, partialResult);
+            }
+
+            return finalResult;
         }
     };
 }
 
-struct MultiplierData {
-    std::vector<float> data;
-    float              factor;
-};
+using ReductionResult   = float;
+using ReductionData     = std::vector<ReductionResult>;
 
-class SaxpyTask final: public hh::AbstractParallelForTask<4, int32_t, hh::ParallelForInput<SaxpyData>, double, hh::ParallelForInput<MultiplierData>, SaxpyData, MultiplierData> {
+class ParallelTask final: public hh::AbstractParallelTask<4, int32_t, hh::ParallelForInput<SaxpyData>, double, hh::ParallelReduceInput<ReductionData, ReductionResult>, SaxpyData, ReductionResult> {
 public:
-    explicit SaxpyTask(const int32_t computeThreads):
-        AbstractParallelForTask("SaxpyTask", computeThreads) {}
+    explicit ParallelTask(const int32_t computeThreads):
+        AbstractParallelTask("ParallelTask", computeThreads) {}
 
     void execute(const std::shared_ptr<int32_t> data) override {}
 
@@ -294,7 +368,7 @@ public:
         this->addResult(data);
     }
 
-    void execute(const std::shared_ptr<hh::ParallelForInput<SaxpyData>::WorkUnit> workUnit) override {
+    void execute(const std::shared_ptr<hh::WorkUnit<SaxpyData>> workUnit) override {
         const auto [data, range] = **workUnit;
         auto       &[x, y, z, a] = *data;
         for(int32_t i = range.begin; i < range.end; i += range.step) {
@@ -302,75 +376,28 @@ public:
         }
     }
 
-    void execute(const std::shared_ptr<MultiplierData> data) override {
-        this->executeWorkUnits(data, int32_t{0}, static_cast<int32_t>(data->data.size()));
-        this->addResult(data);
+    void execute(const std::shared_ptr<ReductionData> data) override {
+        auto result = this->executeReduce(
+            data,
+            int32_t{0},
+            static_cast<int32_t>(data->size()),
+            std::numeric_limits<ReductionResult>::min(),
+            [](const ReductionResult a, const ReductionResult b) { return std::max(a, b); }
+        );
+        this->addResult(std::make_shared<ReductionResult>(result));
     }
 
-    void execute(const std::shared_ptr<hh::ParallelForInput<MultiplierData>::WorkUnit> workUnit) override {
-        const auto [data, range] = **workUnit;
-        auto       &[arr, fact]  = *data;
+    void execute(const std::shared_ptr<hh::WorkUnit<ReductionData, hh::RangePolicy1D<int32_t>, hh::ReduceTag<ReductionResult>>> workUnit) override {
+        auto [data, range] = **workUnit;
+        auto value = std::numeric_limits<ReductionResult>::min();
         for(int32_t i = range.begin; i < range.end; i += range.step) {
-            arr[i] *= fact;
+            value = std::max(value, data->at(i));
         }
+        workUnit->state = value;
     }
 
     std::shared_ptr<AbstractTask> copy() override {
-        return std::make_shared<SaxpyTask>(this->numberThreads());
-    }
-};
-
-using ReductionResult   = float;
-using ReductionData     = std::vector<ReductionResult>;
-template<typename Container, typename Range, typename Result>
-struct ReductionWorkUnit {
-    std::shared_ptr<Container> data;
-    Range                      range;
-    Result&                    result;
-    std::shared_ptr<Latch>     latch;
-};
-using MaxReductionWorkUnit = ReductionWorkUnit<ReductionData, std::tuple<int32_t, int32_t>, ReductionResult>;
-
-class ReductionTask: public hh::AbstractTask<2, ReductionData, MaxReductionWorkUnit, ReductionData, ReductionResult> {
-public:
-    explicit ReductionTask(const int32_t computeThreads):
-        AbstractTask("ReductionTask", computeThreads, false) {}
-
-    void execute(std::shared_ptr<ReductionData> data) override {
-        const auto N              = static_cast<int32_t>(data->size());
-        const auto computeThreads = static_cast<int32_t>(this->numberThreads());
-        const auto range          = std::max(1000'000, (N+computeThreads-1)/computeThreads);
-        const auto chunks         = (N+range-1)/range;
-        auto       latch          = std::make_shared<Latch>(chunks);
-        auto       results        = std::vector(chunks, std::numeric_limits<ReductionResult>::min());
-        const auto self           = static_cast<hh::core::abstraction::ReceiverAbstraction<MaxReductionWorkUnit>*>(this->coreTask().get());
-        for(int32_t i = range, c = 1; i < N; i += range, ++c) {
-            self->receive(std::make_shared<MaxReductionWorkUnit>(
-                data,
-                std::make_tuple(i, std::min(i+range, N)),
-                results[c],
-                latch
-            ));
-            this->coreTask()->wakeUp();
-        }
-
-        execute(std::make_shared<MaxReductionWorkUnit>(data, std::make_tuple(0, std::min(range, N)), results[0], latch));
-        latch->wait();
-        this->addResult(std::make_shared<ReductionResult>(*std::ranges::max_element(results)));
-    }
-
-    void execute(const std::shared_ptr<MaxReductionWorkUnit> workUnit) override {
-        const auto [start, end] = workUnit->range;
-        const auto &data        = *workUnit->data;
-        auto       &value       = workUnit->result;
-        for(int32_t i = start; i < end; ++i) {
-            value = std::max(value, data[i]);
-        }
-        workUnit->latch->count_down();
-    }
-
-    std::shared_ptr<AbstractTask> copy() override {
-        return std::make_shared<ReductionTask>(this->numberThreads());
+        return std::make_shared<ParallelTask>(this->numberThreads());
     }
 };
 
