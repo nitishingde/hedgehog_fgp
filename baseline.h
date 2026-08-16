@@ -323,7 +323,7 @@ namespace hh {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
         }
 
-        template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, typename ValueType, std::integral Int, typename BinaryOp>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] ValueType executeReductionWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
             using WorkUnit    = tool::FindWorkUnit<InputType, ReduceTag<ValueType>, ExpandedInputs>::Type;
