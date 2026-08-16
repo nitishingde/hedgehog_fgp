@@ -239,25 +239,51 @@ namespace hh {
             Outputs<Separator, AllTypes...>
         >::Type;
 
-        template<typename Target, typename Tuple, size_t CurrentIndex = 0>
-        struct IndexOfType;
-
-        template<typename Target, size_t CurrentIndex>
-        struct IndexOfType<Target, std::tuple<>, CurrentIndex> {
-            static_assert(CurrentIndex < 0, "Type not found in Tuple!");
+        template<typename T>
+        struct WorkUnitTraits {
+            static constexpr bool is_work_unit = false;
+            using Data = void;
+            using Tag  = void;
         };
 
-        template<typename Target, typename ...Rest, size_t CurrentIndex>
-        struct IndexOfType<Target, std::tuple<Target, Rest...>, CurrentIndex> {
-            static constexpr size_t Value = CurrentIndex;
+        template<typename Input, typename StateTag, typename Range>
+        struct WorkUnitTraits<WorkUnit<Input, StateTag, Range>> {
+            static constexpr bool is_work_unit = true;
+            using Data = Input;
+            using Tag  = StateTag;
         };
 
-        template<typename Target, typename Head, typename ...Rest, size_t CurrentIndex>
-        struct IndexOfType<Target, std::tuple<Head, Rest...>, CurrentIndex>
-            : IndexOfType<Target, std::tuple<Rest...>, CurrentIndex + 1> {};
+        template<typename TargetData, typename TargetTag, typename Tuple>
+        struct FindWorkUnit;
 
-        template<typename Target, typename Tuple>
-        constexpr size_t IndexOfType_v = IndexOfType<Target, Tuple>::Value;
+        template<typename TargetData, typename TargetTag>
+        struct FindWorkUnit<TargetData, TargetTag, std::tuple<>> {
+            static_assert(sizeof(TargetData) == 0, "Requested parallel construct/tag is not registered for this InputType in ParallelInput!");
+            using Type = TargetData;
+        };
+
+        template<typename TargetData, typename TargetTag, typename Head, typename... Tail>
+        struct FindWorkUnit<TargetData, TargetTag, std::tuple<Head, Tail...>> {
+        private:
+            using Traits = WorkUnitTraits<Head>;
+
+            static constexpr bool Matches = Traits::is_work_unit
+                and std::is_same_v<typename Traits::Data, TargetData>
+                and std::is_same_v<typename Traits::Tag, TargetTag>;
+
+            template<bool Found, typename H, typename... T>
+            struct Selector {
+                using Type = H;
+            };
+
+            template<typename H, typename... T>
+            struct Selector<false, H, T...> {
+                using Type = FindWorkUnit<TargetData, TargetTag, std::tuple<T...>>::Type;
+            };
+
+        public:
+            using Type = Selector<Matches, Head, Tail...>::Type;
+        };
     }
 
     template<size_t Separator, class ...AllTypes>
@@ -276,7 +302,7 @@ namespace hh {
         template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int64_t>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] auto executeWorkUnitsAsync(const std::shared_ptr<InputType> &data, const Int start, const Int end, const Int MIN_RANGE = 100'000) {
-            using WorkUnit    = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ForTag, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
+            using WorkUnit    = tool::FindWorkUnit<InputType, ForTag, ExpandedInputs>::Type;
             using RangePolicy = WorkUnit::RangePolicy;
 
             const auto N              = end-start;
@@ -299,9 +325,9 @@ namespace hh {
 
         template<typename ValueType, typename InputType, std::integral Int, typename BinaryOp>
         requires (not tool::IsWorkUnit<InputType>)
-        [[nodiscard]] ValueType executeReduce(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
-            using WorkUnit     = std::tuple_element_t<tool::IndexOfType_v<WorkUnit<InputType, ReduceTag<ValueType>, RangePolicy1D<Int>>, ExpandedInputs>, ExpandedInputs>;
-            using RangePolicy  = WorkUnit::RangePolicy;
+        [[nodiscard]] ValueType executeReductionWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
+            using WorkUnit    = tool::FindWorkUnit<InputType, ReduceTag<ValueType>, ExpandedInputs>::Type;
+            using RangePolicy = WorkUnit::RangePolicy;
 
             const auto N              = end-start;
             const auto computeThreads = static_cast<Int>(this->numberThreads());
@@ -362,7 +388,7 @@ public:
     }
 
     void execute(const std::shared_ptr<ReductionData> data) override {
-        auto result = this->executeReduce(
+        auto result = this->executeReductionWorkUnits(
             data,
             int64_t{0},
             static_cast<int64_t>(data->size()),
