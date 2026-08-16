@@ -314,7 +314,7 @@ namespace hh {
                 self->receive(std::make_shared<WorkUnit>(data, RangePolicy(i, std::min(i+range, N)), *latch));
                 this->coreTask()->wakeUp();
             }
-            static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, range), *latch));
+            static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(data, RangePolicy(0, std::min(range, N)), *latch));
             return latch;
         }
 
