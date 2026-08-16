@@ -195,9 +195,7 @@ namespace hh {
             typename T::RangePolicy;
             typename T::TagsTuple;
         };
-    }
 
-    namespace tool {
         template<typename InputDescriptor>
         struct ExpandDescriptor;
 
