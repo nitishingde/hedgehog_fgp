@@ -83,6 +83,43 @@ static void testParallelReduce(const int32_t N, const int32_t computeThreads, co
     );
 }
 
+static void testParallelScan(const int32_t N, const int32_t computeThreads, const int32_t ITERS) {
+    const auto data = std::make_shared<CopyIfData>(std::vector<int32_t>(N), std::vector((N+1)/2, 1));
+    std::ranges::iota(data->src, 0);
+
+    auto       graph = hh::Graph<1, CopyIfData, CopyIfData>();
+    const auto task  = std::make_shared<ParallelTask>(computeThreads);
+
+    graph.inputs(task);
+    graph.outputs(task);
+    graph.executeGraph();
+
+    auto times = std::vector<double>();
+    times.reserve(ITERS*2);
+    for(int32_t it = 0; it < ITERS; ++it) {
+        const auto start  = std::chrono::steady_clock::now();
+        graph.pushData(data);
+        auto       result = graph.getBlockingResult();
+        const auto end    = std::chrono::steady_clock::now();
+
+        times.emplace_back(toMilliSeconds(end-start));
+        if(const auto &[src, dst] = *std::get<std::shared_ptr<CopyIfData>>(*result); dst.front()%2 != 0 or dst.back()%2 != 0) {
+            throw std::runtime_error("Scan implementation is incorrect!\n");
+        }
+    }
+    graph.finishPushingData();
+    graph.waitForTermination();
+
+    graph.createDotFile("baseline_scan.dot", hh::ColorScheme::EXECUTION, hh::StructureOptions::QUEUE, hh::InputOptions::SEPARATED);
+    std::print("[{:16}][{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms]\n",
+        "Hedgehog",
+        "COPY_IF",
+        *std::ranges::min_element(times),
+        std::accumulate(times.begin(), times.end(), 0.0)/static_cast<double>(times.size()),
+        *std::ranges::max_element(times)
+    );
+}
+
 int main(const int argc, char **argv) {
     constexpr auto ITERS = 10;
 
@@ -100,6 +137,7 @@ int main(const int argc, char **argv) {
     CLI11_PARSE(app, argc, argv);
     testParallelFor(problemSize, computeThreads, ITERS);
     testParallelReduce(problemSize, computeThreads, ITERS);
+    testParallelScan(problemSize, computeThreads, ITERS);
 
     return 0;
 }
