@@ -46,7 +46,7 @@ static void testParallelFor(const ExecutionSpace &executionSpace, const int32_t 
 
 template<typename ExecutionSpace, typename MemorySpace = ExecutionSpace::memory_space>
 static void testParallelReduce(const ExecutionSpace &executionSpace, const int32_t N, const int32_t ITERS) {
-    const auto     view = Kokkos::View<float*, MemorySpace>("x", N);
+    const auto view = Kokkos::View<float*, MemorySpace>("x", N);
     Kokkos::parallel_for("INIT", Kokkos::RangePolicy(executionSpace, 0, N), KOKKOS_LAMBDA(const int32_t i) {
         view(i) = static_cast<float>(i);
     });
