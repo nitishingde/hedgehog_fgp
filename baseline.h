@@ -384,7 +384,7 @@ namespace hh {
             const auto computeThreads = static_cast<Int>(this->numberThreads());
             const auto range          = std::max(MIN_RANGE, (N+computeThreads-1)/computeThreads);
             const auto chunks         = (N+range-1)/range;
-            auto       workspace      = std::vector(chunks, identityValue);
+            auto       prefixSums     = std::vector(chunks, identityValue);
             auto       self           = static_cast<core::abstraction::ReceiverAbstraction<WorkUnit>*>(this->coreTask().get());
             if constexpr(true) {
                 auto pass1Latch = std::unique_ptr<Latch, LatchDeleter>(new Latch(chunks));
@@ -395,8 +395,8 @@ namespace hh {
                         RangePolicy(i, std::min(i + range, N)),
                         *pass1Latch,
                         ScanTag::ScanState {
-                            .accumulator    = workspace[c],
-                            .finalPass = false
+                            .accumulator = prefixSums[c],
+                            .finalPass   = false
                         }
                     ));
                     this->coreTask()->wakeUp();
@@ -407,19 +407,19 @@ namespace hh {
                     RangePolicy(0, std::min(range, N)),
                     *pass1Latch,
                     ScanTag::ScanState {
-                        .accumulator    = workspace[0],
-                        .finalPass = false
+                        .accumulator = prefixSums[0],
+                        .finalPass   = false
                     }
                 ));
 
                 pass1Latch->wait();
             }
 
-            int64_t runningPrefix = identityValue;
+            auto prefixSum = identityValue;
             for(auto c = 0; c < chunks; ++c) {
-                int64_t chunkTotal = workspace[c];
-                workspace[c]         = runningPrefix;
-                runningPrefix        = scanOp(runningPrefix, chunkTotal);
+                auto chunkPrefixSum = prefixSums[c];
+                prefixSums[c]       = prefixSum;
+                prefixSum           = scanOp(prefixSum, chunkPrefixSum);
             }
 
             if constexpr(true) {
@@ -431,8 +431,8 @@ namespace hh {
                         RangePolicy(i, std::min(i + range, N)),
                         *pass2Latch,
                         ScanTag::ScanState {
-                            .accumulator    = workspace[c],
-                            .finalPass = true
+                            .accumulator = prefixSums[c],
+                            .finalPass   = true
                         }
                     ));
                     this->coreTask()->wakeUp();
@@ -443,8 +443,8 @@ namespace hh {
                     RangePolicy(0, std::min(range, N)),
                     *pass2Latch,
                     ScanTag::ScanState {
-                        .accumulator    = workspace[0],
-                        .finalPass = true
+                        .accumulator = prefixSums[0],
+                        .finalPass   = true
                     }
                 ));
 
