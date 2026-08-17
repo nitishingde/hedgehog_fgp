@@ -154,6 +154,16 @@ namespace hh {
             latch.count_down();
         }
 
+        WorkUnit& operator=(StorageType val) {
+            state = val;
+            return *this;
+        }
+
+        WorkUnit& operator=(const int64_t val) requires (std::is_same_v<StateTag, ScanTag>) {
+            state.accumulator = val;
+            return *this;
+        }
+
         [[nodiscard]] auto operator*() {
             return std::make_tuple(data, range);
         }
@@ -498,7 +508,7 @@ public:
         for(auto i = range.begin; i < range.end; i += range.step) {
             value = std::max(value, data->at(i));
         }
-        workUnit->state = value;
+        *workUnit = value;
     }
 
     void execute(const std::shared_ptr<CopyIfData> data) override {
@@ -520,7 +530,7 @@ public:
             }
             count++;
         }
-        workUnit->accumulator(count);
+        *workUnit = count;
     }
 
     std::shared_ptr<AbstractTask> copy() override {
