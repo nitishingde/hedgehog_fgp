@@ -77,6 +77,43 @@ static void testParallelReduce(const ExecutionSpace &executionSpace, const int32
     );
 }
 
+template<typename ExecutionSpace, typename MemorySpace = ExecutionSpace::memory_space>
+static void testParallelScan(const ExecutionSpace &executionSpace, const int32_t N, const int32_t ITERS) {
+    const auto srcView = Kokkos::View<int32_t*, MemorySpace>("src", N);
+    auto dstView = Kokkos::View<int32_t*, MemorySpace>("dst", (N+1)/2);
+    Kokkos::parallel_for("INIT", Kokkos::RangePolicy(executionSpace, 0, N), KOKKOS_LAMBDA(const int32_t i) {
+        srcView(i) = i;
+    });
+
+    std::vector<double> times;
+    for(int32_t it = 0; it < ITERS; ++it) {
+        const auto start = std::chrono::steady_clock::now();
+        Kokkos::parallel_scan("SCAN", Kokkos::RangePolicy(executionSpace, 0, N), KOKKOS_LAMBDA(const int32_t i, int32_t &count, bool isFinalPass) {
+            if(srcView[i]%2 == 1) return;
+
+            if(isFinalPass) {
+                dstView[count] = srcView[i];
+            }
+            count++;
+        });
+        executionSpace.fence();
+        const auto end = std::chrono::steady_clock::now();
+        times.emplace_back(toMilliSeconds(end-start));
+    }
+
+    if(dstView(0)%2 != 0 or dstView(((N+1)/2)-1)%2 != 0) {
+        throw std::runtime_error("SCAN implementation is incorrect!\n");
+    }
+
+    std::print("[{:16}][{:8}][Min {:8.3f}ms][AVG {:8.3f}ms][Max {:8.3f}ms]\n",
+        "Kokkos-"s + executionSpace.name(),
+        "COPY_IF",
+        *std::ranges::min_element(times),
+        std::accumulate(times.begin(), times.end(), 0.0)/static_cast<double>(times.size()),
+        *std::ranges::max_element(times)
+    );
+}
+
 int main(int argc, char **argv) {
     CLI::App app{"Kokkos Baseline"};
     auto problemSize = 100'000'000;
@@ -96,6 +133,7 @@ int main(int argc, char **argv) {
 
     testParallelFor(executionSpace, problemSize, ITERS);
     testParallelReduce(executionSpace, problemSize, ITERS);
+    testParallelScan(executionSpace, problemSize, ITERS);
 
     return 0;
 }
