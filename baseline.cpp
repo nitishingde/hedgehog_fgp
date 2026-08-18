@@ -48,7 +48,7 @@ static void testParallelFor(const auto N, const int32_t computeThreads, const in
 
 static void testParallelReduce(const int32_t N, const int32_t computeThreads, const int32_t ITERS) {
     const auto data = std::make_shared<std::vector<float>>(N);
-    std::ranges::iota(*data, 0);
+    std::ranges::iota(*data, 1);
 
     auto       graph = hh::Graph<1, ReductionData, ReductionResult>();
     const auto task  = std::make_shared<ParallelTask>(computeThreads);
