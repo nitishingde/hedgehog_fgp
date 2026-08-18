@@ -52,7 +52,7 @@ template<typename ExecutionSpace, typename MemorySpace = ExecutionSpace::memory_
 static void testParallelReduce(const ExecutionSpace &executionSpace, const int32_t N, const int32_t ITERS) {
     const auto view = Kokkos::View<float*, MemorySpace>("x", N);
     Kokkos::parallel_for("INIT", Kokkos::RangePolicy(executionSpace, 0, N), KOKKOS_LAMBDA(const int32_t i) {
-        view(i) = static_cast<float>(i) + 1;
+        view(i) = static_cast<float>(i + 1);
     });
 
     float result = std::numeric_limits<float>::min();
@@ -126,8 +126,6 @@ int main(int argc, char **argv) {
        ->check(CLI::PositiveNumber)
        ->capture_default_str();
     CLI11_PARSE(app, argc, argv);
-
-    std::println("{}", problemSize);
 
     using ExecutionSpace = Kokkos::OneTBB;
     const auto kokkosSG  = Kokkos::ScopeGuard();
