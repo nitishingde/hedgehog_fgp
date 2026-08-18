@@ -1,6 +1,7 @@
 #ifndef HEDGEHOG_FGP_BASELINE_H
 #define HEDGEHOG_FGP_BASELINE_H
 
+#include "lock_free_implementors/limited_lock_free_queue_receiver.hpp"
 #include <hedgehog.h>
 #include <latch>
 
@@ -239,6 +240,37 @@ namespace hh {
             Outputs<Separator, AllTypes...>
         >::Type;
 
+        template<template <size_t, typename ...> class HHType, size_t Separator, typename ExpandedInputsTuple, typename OutputsTuple>
+        struct InstantiateHHType;
+
+        template<template <size_t, typename ...> class HHType, size_t Separator, typename ...ExpandedInputs, typename ...Outputs>
+        struct InstantiateHHType<HHType, Separator, std::tuple<ExpandedInputs...>, std::tuple<Outputs...>> {
+            using Type = HHType<Separator, ExpandedInputs..., Outputs...>;
+        };
+
+        template<template <size_t, typename ...> class HHType, size_t Separator, class ...AllTypes>
+        using InstantiateHHType_t = typename InstantiateHHType<
+            HHType,
+            std::tuple_size_v<typename ExpandAllInputs<Inputs<Separator, AllTypes...>>::Type>,
+            typename ExpandAllInputs<Inputs<Separator, AllTypes...>>::Type,
+            Outputs<Separator, AllTypes...>
+        >::Type;
+
+        template <size_t Separator, class ...AllTypes>
+        auto makeParallelTaskCore(auto task, std::string const &name, size_t numberThreads, bool automaticStart = false) {
+            using CoreType = InstantiateHHType_t<hh::core::CoreTask, Separator, AllTypes...>;
+            using ReceiverType = InstantiateHHType_t<hh::core::implementor::MLLFQR, Separator, AllTypes...>;
+            using DMEType = InstantiateHHType_t<DME, Separator, AllTypes...>;
+            using MDSType = InstantiateHHType_t<MDS, Separator, AllTypes...>;
+            return std::make_shared<CoreType>(
+                    task, name, numberThreads, false,
+                    std::make_shared<hh::core::implementor::DefaultSlot>(),
+                    std::make_shared<ReceiverType>(),
+                    std::make_shared<DMEType>(task),
+                    std::make_shared<hh::core::implementor::DefaultNotifier>(),
+                    std::make_shared<MDSType>());
+        }
+
         template<typename T>
         struct WorkUnitTraits {
             static constexpr bool is_work_unit = false;
@@ -296,8 +328,12 @@ namespace hh {
         static constexpr auto TotalExpandedInputs = std::tuple_size_v<ExpandedInputs>;
         using Base           = tool::InstantiateTaskBase_t<Separator, AllTypes...>;
 
+        // explicit AbstractParallelTask(const std::string &name = "ParallelTask", const size_t numberThreads = 1):
+        //     Base(name, numberThreads, false) {}
+
         explicit AbstractParallelTask(const std::string &name = "ParallelTask", const size_t numberThreads = 1):
-            Base(name, numberThreads, false) {}
+            Base(hh::tool::makeParallelTaskCore<Separator, AllTypes...>(this, name, numberThreads)) {}
+
 
         template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int = int64_t>
         requires (not tool::IsWorkUnit<InputType>)
