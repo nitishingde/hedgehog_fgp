@@ -50,12 +50,12 @@ if (TARGET tbb AND NOT TARGET TBB::tbb)
 endif()
 unset(BUILD_SHARED_LIBS)
 
-add_executable(tbbb tbb_main.cpp)
+add_executable(tbbb main_tbb.cpp)
 target_link_libraries(tbbb PRIVATE CLI11::CLI11 Kokkos::kokkos TBB::tbb hedgehog::hedgehog)
 
-add_executable(hh_tbb hh_main.cpp)
+add_executable(hh_tbb main_hh.cpp)
 target_link_libraries(hh_tbb PRIVATE CLI11::CLI11 Kokkos::kokkos TBB::tbb hedgehog::hedgehog)
 
-add_executable(kokkos_tbb kokkos_main.cpp)
+add_executable(kokkos_tbb main_kokkos.cpp)
 target_include_directories(kokkos_tbb PUBLIC ../kokkos-tbb/)
 target_link_libraries(kokkos_tbb PRIVATE CLI11::CLI11 Kokkos::kokkos TBB::tbb hedgehog::hedgehog)
