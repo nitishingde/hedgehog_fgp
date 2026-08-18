@@ -64,7 +64,7 @@ class alignas(64) LimitedLockFreeQueue {
               return std::nullopt;
           } else {
               cross_platform_yield();
-              h = tail_.load(std::memory_order_acquire);
+              h = head_.load(std::memory_order_acquire);
           }
       }
       auto result = datas_[h & Mask];
