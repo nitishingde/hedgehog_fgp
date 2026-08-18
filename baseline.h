@@ -130,13 +130,12 @@ namespace hh {
         using StorageType = ValueType&;
     };
 
-    template<typename ValueType>
     struct ScanTag {
         struct ScanState {
-            using value_type = ValueType;
-            ValueType& chunkSum     = {};
-            ValueType& prefixOffset = {};
-            bool       finalPass    = {false};
+            using value_type = int64_t;
+
+            int64_t& accumulator;
+            bool     finalPass;
         };
         using StorageType = ScanState;
     };
@@ -150,14 +149,36 @@ namespace hh {
         Range                 range;
         Latch&                latch;
         [[no_unique_address]]
-        StorageType           state;
+        StorageType           state = {};
 
         ~WorkUnit() {
             latch.count_down();
         }
 
+        WorkUnit& operator=(StorageType val) {
+            state = val;
+            return *this;
+        }
+
+        WorkUnit& operator=(const int64_t val) requires (std::is_same_v<StateTag, ScanTag>) {
+            state.accumulator = val;
+            return *this;
+        }
+
         [[nodiscard]] auto operator*() {
             return std::make_tuple(data, range);
+        }
+
+        [[nodiscard]] int64_t accumulator() requires (std::is_same_v<StateTag, ScanTag>) {
+            return state.accumulator;
+        }
+
+        void accumulator(const int64_t val) requires (std::is_same_v<StateTag, ScanTag>) {
+            state.accumulator = val;
+        }
+
+        [[nodiscard]] bool isFinalPass() requires (std::is_same_v<StateTag, ScanTag>) {
+            return state.finalPass;
         }
     };
 
@@ -174,8 +195,8 @@ namespace hh {
     template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
     using ParallelReduceInput = ParallelInput<Input, Range, ReduceTag<ValueType>>;
 
-    template<typename Input, typename ValueType, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
-    using ParallelScanInput = ParallelInput<Input, Range, ScanTag<ValueType>>;
+    template<typename Input, tool::IsRangePolicy Range = RangePolicy1D<int64_t>>
+    using ParallelScanInput = ParallelInput<Input, Range, ScanTag>;
 
     namespace tool {
         template<typename T>
@@ -359,7 +380,7 @@ namespace hh {
             (void)executeWorkUnitsAsync(data, start, end, MIN_RANGE);
         }
 
-        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, typename ValueType, std::integral Int, typename BinaryOp>
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int, typename ValueType, typename BinaryOp>
         requires (not tool::IsWorkUnit<InputType>)
         [[nodiscard]] ValueType executeReductionWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, ValueType identityValue, BinaryOp reductionOp, const Int MIN_RANGE = 100'000) {
             using WorkUnit    = tool::FindWorkUnit<InputType, ReduceTag<ValueType>, ExpandedInputs>::Type;
@@ -388,6 +409,84 @@ namespace hh {
 
             return finalResult;
         }
+
+        template<tool::ContainsInTupleConcept<ExpandedInputs> InputType, std::integral Int, typename BinaryOp = std::plus<int64_t>>
+        requires (not tool::IsWorkUnit<InputType>)
+        void executeScanWorkUnits(const std::shared_ptr<InputType> &data, const Int start, const Int end, int64_t identityValue = 0, BinaryOp scanOp = {}, const Int MIN_RANGE = 100'000) {
+            using WorkUnit    = tool::FindWorkUnit<InputType, ScanTag, ExpandedInputs>::Type;
+            using RangePolicy = WorkUnit::RangePolicy;
+
+            const auto N              = end-start;
+            const auto computeThreads = static_cast<Int>(this->numberThreads());
+            const auto range          = std::max(MIN_RANGE, (N+computeThreads-1)/computeThreads);
+            const auto chunks         = (N+range-1)/range;
+            auto       prefixSums     = std::vector(chunks, identityValue);
+            auto       self           = static_cast<core::abstraction::ReceiverAbstraction<WorkUnit>*>(this->coreTask().get());
+            if constexpr(true) {
+                auto pass1Latch = std::unique_ptr<Latch, LatchDeleter>(new Latch(chunks));
+
+                for(Int i = range, c = 1; i < N; i += range, ++c) {
+                    self->receive(std::make_shared<WorkUnit>(
+                        data,
+                        RangePolicy(i, std::min(i + range, N)),
+                        *pass1Latch,
+                        ScanTag::ScanState {
+                            .accumulator = prefixSums[c],
+                            .finalPass   = false
+                        }
+                    ));
+                    this->coreTask()->wakeUp();
+                }
+
+                static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(
+                    data,
+                    RangePolicy(0, std::min(range, N)),
+                    *pass1Latch,
+                    ScanTag::ScanState {
+                        .accumulator = prefixSums[0],
+                        .finalPass   = false
+                    }
+                ));
+
+                pass1Latch->wait();
+            }
+
+            auto prefixSum = identityValue;
+            for(auto c = 0; c < chunks; ++c) {
+                auto chunkPrefixSum = prefixSums[c];
+                prefixSums[c]       = prefixSum;
+                prefixSum           = scanOp(prefixSum, chunkPrefixSum);
+            }
+
+            if constexpr(true) {
+                auto pass2Latch = std::unique_ptr<Latch, LatchDeleter>(new Latch(chunks));
+
+                for(Int i = range, c = 1; i < N; i += range, ++c) {
+                    self->receive(std::make_shared<WorkUnit>(
+                        data,
+                        RangePolicy(i, std::min(i + range, N)),
+                        *pass2Latch,
+                        ScanTag::ScanState {
+                            .accumulator = prefixSums[c],
+                            .finalPass   = true
+                        }
+                    ));
+                    this->coreTask()->wakeUp();
+                }
+
+                static_cast<behavior::Execute<WorkUnit>*>(this)->execute(std::make_shared<WorkUnit>(
+                    data,
+                    RangePolicy(0, std::min(range, N)),
+                    *pass2Latch,
+                    ScanTag::ScanState {
+                        .accumulator = prefixSums[0],
+                        .finalPass   = true
+                    }
+                ));
+
+                pass2Latch->wait();
+            }
+        }
     };
 }
 
@@ -401,7 +500,12 @@ struct SaxpyData {
 using ReductionResult   = float;
 using ReductionData     = std::vector<ReductionResult>;
 
-class ParallelTask final: public hh::AbstractParallelTask<4, int32_t, hh::ParallelForInput<SaxpyData>, double, hh::ParallelReduceInput<ReductionData, ReductionResult>, SaxpyData, ReductionResult> {
+struct CopyIfData {
+    std::vector<int32_t> src;
+    std::vector<int32_t> dst;
+};
+
+class ParallelTask final: public hh::AbstractParallelTask<5, int32_t, hh::ParallelInput<SaxpyData, hh::RangePolicy1D<>, hh::ForTag>, double, hh::ParallelReduceInput<ReductionData, ReductionResult>, hh::ParallelScanInput<CopyIfData>, SaxpyData, ReductionResult, CopyIfData> {
 public:
     explicit ParallelTask(const int32_t computeThreads):
         AbstractParallelTask("ParallelTask", computeThreads) {}
@@ -440,7 +544,29 @@ public:
         for(auto i = range.begin; i < range.end; i += range.step) {
             value = std::max(value, data->at(i));
         }
-        workUnit->state = value;
+        *workUnit = value;
+    }
+
+    void execute(const std::shared_ptr<CopyIfData> data) override {
+        this->executeScanWorkUnits(data, int64_t{0}, static_cast<int64_t>(data->src.size()));
+        this->addResult(data);
+    }
+
+    void execute(const std::shared_ptr<hh::WorkUnit<CopyIfData, hh::ScanTag>> workUnit) override {
+        auto [data, range] = **workUnit;
+        auto &[src, dst]   = *data;
+
+        auto       count       = workUnit->accumulator();
+        const auto isFinalPass = workUnit->isFinalPass();
+        for(auto i = range.begin; i < range.end; i += range.step) {
+            if(src[i]%2 != 0) continue;
+
+            if(isFinalPass) {
+                dst[count] = src[i];
+            }
+            count++;
+        }
+        *workUnit = count;
     }
 
     std::shared_ptr<AbstractTask> copy() override {
