@@ -16,13 +16,13 @@ class OneTBB {
   std::shared_ptr<OneTBBImpl> m_impl = nullptr;
 
 public:
-    typedef OneTBB execution_space;
-    typedef HostSpace memory_space;
-    typedef Device<execution_space, memory_space> device_type;
-    typedef LayoutRight array_layout;
-    typedef memory_space::size_type size_type;
-    // typedef memory_space::index_type index_type;
-    typedef size_t index_type;
+    using execution_space = OneTBB;
+    using memory_space = HostSpace;
+    using device_type = Device<execution_space, memory_space>;
+    using array_layout = LayoutRight;
+    using size_type = memory_space::size_type;
+    using index_typei = size_t;
+    using scratch_memory_space = ScratchMemorySpace<OneTBB>;
 
     OneTBB(unsigned int num_threads = std::thread::hardware_concurrency())
           : m_impl(std::make_shared<OneTBBImpl>(num_threads)) {}
