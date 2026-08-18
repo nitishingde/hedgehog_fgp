@@ -127,18 +127,33 @@ int main(int argc, char **argv) {
        ->capture_default_str();
     CLI11_PARSE(app, argc, argv);
 
-    using ExecutionSpace = Kokkos::OneTBB;
     const auto kokkosSG  = Kokkos::ScopeGuard();
 
     constexpr auto ITERS = 10;
 
-    const auto executionSpace = ExecutionSpace();
-    executionSpace.print_configuration(std::cout);
-    std::println();
+    // default kokkos space
+    {
+        using ExecutionSpace = Kokkos::DefaultExecutionSpace;
+        const auto executionSpace = ExecutionSpace();
+        executionSpace.print_configuration(std::cout);
+        std::println();
 
-    testParallelFor(executionSpace, problemSize, ITERS);
-    testParallelReduce(executionSpace, problemSize, ITERS);
-    testParallelScan(executionSpace, problemSize, ITERS);
+        testParallelFor(executionSpace, problemSize, ITERS);
+        testParallelReduce(executionSpace, problemSize, ITERS);
+        testParallelScan(executionSpace, problemSize, ITERS);
+    }
+
+    // tbb space
+    {
+        using ExecutionSpace = Kokkos::OneTBB;
+        const auto executionSpace = ExecutionSpace();
+        executionSpace.print_configuration(std::cout);
+        std::println();
+
+        testParallelFor(executionSpace, problemSize, ITERS);
+        testParallelReduce(executionSpace, problemSize, ITERS);
+        testParallelScan(executionSpace, problemSize, ITERS);
+    }
 
     return 0;
 }
