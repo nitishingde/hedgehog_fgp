@@ -27,21 +27,21 @@ class alignas(64) LimitedLockFreeQueue {
   }
 
   bool push(T data) {
-      auto t = tail_.load(std::memory_order_acquire);
+      size_t t = tail_.load();
 
       for (;;) {
-          auto index = indices_[t & Mask].load(std::memory_order_acquire);
-          auto diff = static_cast<int64_t>(index) - static_cast<int64_t>(t);
+          size_t index = indices_[t & Mask].load(std::memory_order_acquire);
+          int64_t diff = static_cast<int64_t>(index) - static_cast<int64_t>(t);
 
           if (diff == 0) {
-              if (tail_.compare_exchange_weak(t, t + 1, std::memory_order_relaxed)) {
+              if (tail_.compare_exchange_weak(t, t + 1)) {
                   break;
               }
           } else if (diff < 0) {
               return false;
           } else {
               cross_platform_yield();
-              t = tail_.load(std::memory_order_acquire);
+              t = tail_.load();
           }
       }
       datas_[t & Mask] = data;
@@ -50,11 +50,11 @@ class alignas(64) LimitedLockFreeQueue {
   }
 
   std::optional<T> pop() {
-      auto h = head_.load(std::memory_order_acquire);
+      size_t h = head_.load();
 
       for (;;) {
-          auto index = indices_[h & Mask].load(std::memory_order_acquire);
-          auto diff = static_cast<int64_t>(index) - static_cast<int64_t>(h + 1);
+          size_t index = indices_[h & Mask].load(std::memory_order_acquire);
+          int64_t diff = static_cast<int64_t>(index) - static_cast<int64_t>(h + 1);
 
           if (diff == 0) {
               if (head_.compare_exchange_weak(h, h + 1, std::memory_order_relaxed)) {
@@ -64,17 +64,17 @@ class alignas(64) LimitedLockFreeQueue {
               return std::nullopt;
           } else {
               cross_platform_yield();
-              h = head_.load(std::memory_order_acquire);
+              h = head_.load();
           }
       }
-      auto result = datas_[h & Mask];
+      T result = datas_[h & Mask];
+      datas_[h & Mask] = T{};
       indices_[h & Mask].store(h + Size, std::memory_order_release);
       return result;
   }
 
-  // TODO: using relaxed order may be dangerous when used in hedgehog (this should be properly tested on ARM).
   size_t size() const {
-      return tail_.load(std::memory_order_relaxed) - head_.load(std::memory_order_relaxed);
+      return tail_.load() - head_.load();
   }
 };
 
