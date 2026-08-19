@@ -20,7 +20,6 @@ class LimitedLockFreeQueueReceiver : public ImplementorReceiver<Input> {
   std::unique_ptr<std::set<abstraction::SenderAbstraction<Input> *>> const senders_ = nullptr;
   std::mutex sendersMutex_;
 
-
  public:
   /// @brief Default constructor
   /// @details Initialize the queue with a default node with no data (nullptr)
@@ -75,6 +74,7 @@ class LimitedLockFreeQueueReceiver : public ImplementorReceiver<Input> {
   size_t numberElementsReceived() override {
     return queue_->size();
   }
+
   /// @brief Accessor to the maximum filling size during the queue lifetime
   /// @return Maximum filling size during the queue lifetime
   [[nodiscard]] size_t maxNumberElementsReceived() const override {
