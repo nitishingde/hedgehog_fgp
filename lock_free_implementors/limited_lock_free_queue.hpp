@@ -12,9 +12,12 @@ namespace hh {
 template <typename T, size_t Size>
 class alignas(64) LimitedLockFreeQueue {
  private:
+  struct alignas(64) Slot {
+      T data;
+      std::atomic<size_t> index;
+  };
   static constexpr size_t Mask = Size - 1;
-  alignas(64) T datas_[Size];
-  alignas(64) std::atomic<size_t> indices_[Size];
+  alignas(64) Slot slots_[Size];
   alignas(64) std::atomic<size_t> head_{0};
   alignas(64) std::atomic<size_t> tail_{0};
 
@@ -22,7 +25,7 @@ class alignas(64) LimitedLockFreeQueue {
   LimitedLockFreeQueue() {
       static_assert(((Size - 1) & Size) == 0, "Bounded lock free queue Size must be a power of 2.");
       for (size_t i = 0; i < Size; ++i) {
-          indices_[i] = i;
+          slots_[i].index = i;
       }
   }
 
@@ -30,7 +33,7 @@ class alignas(64) LimitedLockFreeQueue {
       size_t t = tail_.load();
 
       for (;;) {
-          size_t index = indices_[t & Mask].load(std::memory_order_acquire);
+          size_t index = slots_[t & Mask].index.load(std::memory_order_acquire);
           int64_t diff = static_cast<int64_t>(index) - static_cast<int64_t>(t);
 
           if (diff == 0) {
@@ -44,8 +47,8 @@ class alignas(64) LimitedLockFreeQueue {
               t = tail_.load();
           }
       }
-      datas_[t & Mask] = data;
-      indices_[t & Mask].store(t + 1, std::memory_order_release);
+      slots_[t & Mask].data = data;
+      slots_[t & Mask].index.store(t + 1, std::memory_order_release);
       return true;
   }
 
@@ -53,7 +56,7 @@ class alignas(64) LimitedLockFreeQueue {
       size_t h = head_.load();
 
       for (;;) {
-          size_t index = indices_[h & Mask].load(std::memory_order_acquire);
+          size_t index = slots_[h & Mask].index.load(std::memory_order_acquire);
           int64_t diff = static_cast<int64_t>(index) - static_cast<int64_t>(h + 1);
 
           if (diff == 0) {
@@ -67,9 +70,9 @@ class alignas(64) LimitedLockFreeQueue {
               h = head_.load();
           }
       }
-      T result = datas_[h & Mask];
-      datas_[h & Mask] = T{};
-      indices_[h & Mask].store(h + Size, std::memory_order_release);
+      T result = slots_[h & Mask].data;
+      slots_[h & Mask].data = T{};
+      slots_[h & Mask].index.store(h + Size, std::memory_order_release);
       return result;
   }
 
