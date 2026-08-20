@@ -77,7 +77,7 @@ class alignas(64) LimitedLockFreeQueue {
   }
 
   size_t size() const {
-      return tail_.load() - head_.load();
+      return tail_.load(std::memory_order_relaxed) - head_.load(std::memory_order_relaxed);
   }
 };
 
