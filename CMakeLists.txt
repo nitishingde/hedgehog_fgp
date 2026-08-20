@@ -23,6 +23,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(hedgehog)
 
 FetchContent_Declare(
+    concurrentqueue
+    GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+    GIT_TAG        v1.0.5
+    GIT_SHALLOW    TRUE
+    OVERRIDE_FIND_PACKAGE
+)
+FetchContent_MakeAvailable(concurrentqueue)
+include_directories(${CMAKE_BINARY_DIR}/_deps/concurrentqueue-src/)
+
+FetchContent_Declare(
     Kokkos
     GIT_REPOSITORY https://github.com/kokkos/kokkos.git
     GIT_TAG        5.1.1

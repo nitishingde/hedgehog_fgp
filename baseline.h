@@ -2,6 +2,7 @@
 #define HEDGEHOG_FGP_BASELINE_H
 
 #include "lock_free_implementors/limited_lock_free_queue_receiver.hpp"
+#include "lock_free_implementors/moodycamel_receiver.hpp"
 #include <hedgehog.h>
 #include <latch>
 
@@ -280,7 +281,8 @@ namespace hh {
         template <size_t Separator, class ...AllTypes>
         auto makeParallelTaskCore(auto task, std::string const &name, size_t numberThreads, bool automaticStart = false) {
             using CoreType = InstantiateHHType_t<hh::core::CoreTask, Separator, AllTypes...>;
-            using ReceiverType = InstantiateHHType_t<hh::core::implementor::MLLFQR, Separator, AllTypes...>;
+            // using ReceiverType = InstantiateHHType_t<hh::core::implementor::MLLFQR, Separator, AllTypes...>;
+            using ReceiverType = InstantiateHHType_t<hh::core::implementor::MCLR, Separator, AllTypes...>;
             using DMEType = InstantiateHHType_t<DME, Separator, AllTypes...>;
             using MDSType = InstantiateHHType_t<MDS, Separator, AllTypes...>;
             return std::make_shared<CoreType>(
