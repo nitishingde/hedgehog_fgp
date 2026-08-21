@@ -3,6 +3,8 @@
 
 #include "lock_free_implementors/limited_lock_free_queue_receiver.hpp"
 #include "lock_free_implementors/moodycamel_receiver.hpp"
+#include "lock_free_implementors/split_slot.hpp"
+#include "lock_free_implementors/group_slot.hpp"
 #include <hedgehog.h>
 #include <latch>
 
@@ -287,7 +289,7 @@ namespace hh {
             using MDSType = InstantiateHHType_t<MDS, Separator, AllTypes...>;
             return std::make_shared<CoreType>(
                     task, name, numberThreads, false,
-                    std::make_shared<hh::core::implementor::DefaultSlot>(),
+                    std::make_shared<hh::core::implementor::GroupSlot>(numberThreads), // DefaultSlot, SplitSlot, GroupSlot
                     std::make_shared<ReceiverType>(),
                     std::make_shared<DMEType>(task),
                     std::make_shared<hh::core::implementor::DefaultNotifier>(),
