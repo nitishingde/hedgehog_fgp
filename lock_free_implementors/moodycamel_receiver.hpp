@@ -51,7 +51,7 @@ class MoodycamelReceiver : public ImplementorReceiver<Input> {
   /// @brief Store a piece of data in the atomic queue
   /// @param data Data to store
   /// @return True
-  bool receive(std::shared_ptr<Input> data) override {
+  bool receive(std::shared_ptr<Input> data, ReceiverReceiveOptions const &) override {
     while (!queue_->enqueue(data)) {
         cross_platform_yield();
     }
@@ -61,7 +61,7 @@ class MoodycamelReceiver : public ImplementorReceiver<Input> {
   /// @brief Get a piece of data from the atomic queue
   /// @param data Reference uses to return the piece of data
   /// @return True
-  bool getInputData(std::shared_ptr<Input> &data) override {
+  bool getInputData(std::shared_ptr<Input> &data, ReceiverGetInputDataOptions const &) override {
       if (auto result = queue_->try_dequeue(data)) {
           return true;
       }
