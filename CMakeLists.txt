@@ -15,8 +15,8 @@ FetchContent_MakeAvailable(CLI11)
 
 FetchContent_Declare(
     hedgehog
-    GIT_REPOSITORY https://github.com/usnistgov/hedgehog.git
-    GIT_TAG        master
+    GIT_REPOSITORY https://github.com/drfailer/hedgehog.git
+    GIT_TAG        refactor
     GIT_SHALLOW    TRUE
     OVERRIDE_FIND_PACKAGE
 )
