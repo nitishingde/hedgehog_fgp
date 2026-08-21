@@ -289,7 +289,9 @@ namespace hh {
             using MDSType = InstantiateHHType_t<MDS, Separator, AllTypes...>;
             return std::make_shared<CoreType>(
                     task, name, numberThreads, false,
-                    std::make_shared<hh::core::implementor::GroupSlot>(numberThreads), // DefaultSlot, SplitSlot, GroupSlot
+                    // std::make_shared<hh::core::implementor::DefaultSlot>(numberThreads),
+                    std::make_shared<hh::core::implementor::SplitSlot>(numberThreads),
+                    // std::make_shared<hh::core::implementor::GroupSlot>(numberThreads, 4),
                     std::make_shared<ReceiverType>(),
                     std::make_shared<DMEType>(task),
                     std::make_shared<hh::core::implementor::DefaultNotifier>(),
