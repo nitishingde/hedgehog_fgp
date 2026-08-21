@@ -3,6 +3,9 @@ project(hedgehog_fgp)
 
 set(CMAKE_CXX_STANDARD 23)
 
+# makes refactoring easier, can be removed to understand complex errors
+add_compile_options(-ftemplate-backtrace-limit=1 -fmax-errors=5)
+
 include(FetchContent)
 
 FetchContent_Declare(
