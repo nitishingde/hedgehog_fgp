@@ -283,14 +283,15 @@ namespace hh {
         template <size_t Separator, class ...AllTypes>
         auto makeParallelTaskCore(auto task, std::string const &name, size_t numberThreads, bool automaticStart = false) {
             using CoreType = InstantiateHHType_t<hh::core::CoreTask, Separator, AllTypes...>;
+            using ReceiverType = InstantiateHHType_t<hh::tool::MQR, Separator, AllTypes...>;
             // using ReceiverType = InstantiateHHType_t<hh::core::implementor::MLLFQR, Separator, AllTypes...>;
-            using ReceiverType = InstantiateHHType_t<hh::core::implementor::MCLR, Separator, AllTypes...>;
+            // using ReceiverType = InstantiateHHType_t<hh::core::implementor::MCLR, Separator, AllTypes...>;
             using DMEType = InstantiateHHType_t<DME, Separator, AllTypes...>;
             using MDSType = InstantiateHHType_t<MDS, Separator, AllTypes...>;
             return std::make_shared<CoreType>(
                     task, name, numberThreads, false,
-                    // std::make_shared<hh::core::implementor::DefaultSlot>(numberThreads),
-                    std::make_shared<hh::core::implementor::SplitSlot>(numberThreads),
+                    std::make_shared<hh::core::implementor::DefaultSlot>(),
+                    // std::make_shared<hh::core::implementor::SplitSlot>(numberThreads),
                     // std::make_shared<hh::core::implementor::GroupSlot>(numberThreads, 4),
                     std::make_shared<ReceiverType>(),
                     std::make_shared<DMEType>(task),
